@@ -1,0 +1,715 @@
+import { useMemo, useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Pencil, Trash2 } from 'lucide-react';
+import { toast } from 'react-toastify';
+import axiosInstance from '../../api/axiosInstance';
+import { useAppStore } from '@/store/useAppStore';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { AppSelect } from '@/components/AppSelect';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { ModalForm } from '../../components/ModalForm';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../../components/ui/alert-dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+
+interface Perusahaan {
+  _id?: string;
+  kode_perusahaan: string;
+  nama_perusahaan: string;
+}
+
+const getReferenceId = (value: any): string => {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object') {
+    return String(value._id || value.id || '');
+  }
+  return String(value);
+};
+
+const getReferenceIds = (values: any): string[] => {
+  if (!values) return [];
+  const list = Array.isArray(values) ? values : [values];
+  return Array.from(new Set(list.map(getReferenceId).filter(Boolean)));
+};
+
+export default function Rekening() {
+  const queryClient = useQueryClient();
+  const { user } = useAppStore();
+  const canViewSaldo = user?.role === 'superuser' || user?.role === 'corsec';
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [formData, setFormData] = useState<Rekening>({ bank_id: '', perusahaan_ids: [], no_rekening: '', nama_rekening: '', saldo: 0 });
+  const [saldoDisplay, setSaldoDisplay] = useState<string>('0');
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [transferDialogOpen, setTransferDialogOpen] = useState(false);
+  const [transferNominalDisplay, setTransferNominalDisplay] = useState('0');
+  const [transferForm, setTransferForm] = useState({
+    from_rekening_id: '',
+    to_rekening_id: '',
+    nominal: 0,
+    tanggal: new Date().toISOString().slice(0, 10),
+    keterangan: '',
+  });
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterBank, setFilterBank] = useState('ALL');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  // Helper functions for currency formatting
+  const formatCurrency = (value: number): string => {
+    return new Intl.NumberFormat('id-ID', {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    }).format(value);
+  };
+
+  const parseCurrency = (value: string): number => {
+    // Remove all non-numeric characters except comma and dot
+    const cleaned = value.replace(/[^\d.,]/g, '');
+    // Replace comma with dot for decimal
+    const normalized = cleaned.replace(',', '.');
+    const parsed = parseFloat(normalized);
+    return isNaN(parsed) ? 0 : parsed;
+  };
+
+  // Get bank list for dropdown
+  const { data: bankList = [] } = useQuery<Bank[]>({
+    queryKey: ['bank-all'],
+    queryFn: async () => {
+      const res = await axiosInstance.get('/master/bank?all=true');
+      return res.data || [];
+    },
+  });
+
+  // Get rekening list
+  const { data: rekeningList = [], isLoading } = useQuery<Rekening[]>({
+    queryKey: ['rekening-all'],
+    queryFn: async () => {
+      const res = await axiosInstance.get('/master/rekening?all=true');
+      return res.data || [];
+    },
+  });
+  const { data: perusahaanList = [] } = useQuery<Perusahaan[]>({
+    queryKey: ['perusahaan-all'],
+    queryFn: async () => {
+      const res = await axiosInstance.get('/master/perusahaan?all=true');
+      return res.data || [];
+    },
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: async (payload: Rekening) => {
+      if (editId) {
+        return axiosInstance.put(`/master/rekening/${editId}`, payload);
+      }
+      return axiosInstance.post('/master/rekening', payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rekening-all'] });
+      toast.success('Data berhasil disimpan.');
+      handleCloseModal();
+    },
+    onError: () => {
+      toast.error('Gagal menyimpan data rekening!');
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return axiosInstance.delete(`/master/rekening/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rekening-all'] });
+      toast.success('Data berhasil dihapus.');
+    },
+    onError: () => {
+      toast.error('Gagal menghapus data rekening!');
+    },
+  });
+
+  const transferMutation = useMutation({
+    mutationFn: async (payload: typeof transferForm) => {
+      return axiosInstance.post('/master/rekening/transfer-saldo', payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rekening-all'] });
+      toast.success('Transfer saldo berhasil diproses.');
+      setTransferDialogOpen(false);
+      setTransferForm({
+        from_rekening_id: '',
+        to_rekening_id: '',
+        nominal: 0,
+        tanggal: new Date().toISOString().slice(0, 10),
+        keterangan: '',
+      });
+      setTransferNominalDisplay('0');
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.message || 'Gagal transfer saldo.');
+    },
+  });
+
+  const handleOpenModal = (rekening?: Rekening) => {
+    if (rekening) {
+      let bank_id = rekening.bank_id;
+      // Jika kode_bank ada, cari _id bank yang sesuai
+      if (rekening.kode_bank && bankList.length > 0) {
+        const found = bankList.find((b) => b.kode_bank === rekening.kode_bank);
+        if (found) bank_id = found._id || bank_id;
+      }
+      setEditId(rekening._id || null);
+      const perusahaan_ids = getReferenceIds(rekening.perusahaan_ids);
+      const legacyPerusahaanId = getReferenceId(rekening.perusahaan_id);
+      setFormData({
+        bank_id,
+        perusahaan_id: legacyPerusahaanId,
+        perusahaan_ids: perusahaan_ids.length > 0 ? perusahaan_ids : (legacyPerusahaanId ? [legacyPerusahaanId] : []),
+        kode_perusahaan: rekening.kode_perusahaan,
+        nama_perusahaan: rekening.nama_perusahaan,
+        kode_bank: rekening.kode_bank,
+        no_rekening: rekening.no_rekening,
+        nama_rekening: rekening.nama_rekening,
+        saldo: rekening.saldo || 0,
+      });
+      setSaldoDisplay(formatCurrency(rekening.saldo || 0));
+    } else {
+      setEditId(null);
+      setFormData({ bank_id: '', perusahaan_ids: [], kode_perusahaan: '', nama_perusahaan: '', no_rekening: '', nama_rekening: '', saldo: 0 });
+      setSaldoDisplay('0');
+    }
+    setModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setModalOpen(false);
+    setEditId(null);
+    setFormData({ bank_id: '', perusahaan_ids: [], no_rekening: '', nama_rekening: '', saldo: 0 });
+    setSaldoDisplay('0');
+  };
+
+  const handleSaldoBlur = () => {
+    // Format the display value when user finishes editing
+    setSaldoDisplay(formatCurrency(formData.saldo));
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    if (name === 'saldo') {
+      // Handle currency input
+      const numericValue = parseCurrency(value);
+      setFormData({ ...formData, [name]: numericValue });
+      setSaldoDisplay(value); // Keep the formatted display
+    } else {
+      setFormData({ ...formData, [name]: name === 'bank_id' ? value : value.toUpperCase() });
+    }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const perusahaan_ids = formData.perusahaan_ids || [];
+    saveMutation.mutate({
+      ...formData,
+      perusahaan_id: perusahaan_ids[0] || '',
+      perusahaan_ids,
+    });
+  };
+
+  const handleTransferSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!transferForm.from_rekening_id || !transferForm.to_rekening_id) {
+      toast.error('Pilih rekening sumber dan rekening tujuan.');
+      return;
+    }
+    if (transferForm.from_rekening_id === transferForm.to_rekening_id) {
+      toast.error('Rekening sumber dan tujuan tidak boleh sama.');
+      return;
+    }
+    if (!transferForm.nominal || transferForm.nominal <= 0) {
+      toast.error('Nominal transfer harus lebih besar dari 0.');
+      return;
+    }
+    transferMutation.mutate(transferForm);
+  };
+
+  const handleDelete = (id: string) => {
+    setDeleteId(id);
+    setShowDeleteDialog(true);
+  };
+
+  const confirmDelete = () => {
+    if (deleteId) {
+      deleteMutation.mutate(deleteId);
+      setShowDeleteDialog(false);
+      setDeleteId(null);
+    }
+  };
+
+  const getRekeningPerusahaanLabel = (r: Rekening) => {
+    const populatedLabels = (r.perusahaan_ids || [])
+      .filter((p: any) => typeof p === 'object')
+      .map((p: any) => `${p.kode_perusahaan || '-'} - ${p.nama_perusahaan || '-'}`);
+    if (populatedLabels.length > 0) return populatedLabels.join(', ');
+    if (r.kode_perusahaan || r.nama_perusahaan) return `${r.kode_perusahaan || '-'} - ${r.nama_perusahaan || '-'}`;
+    return '-';
+  };
+
+  const filteredRekeningList = useMemo(() => {
+    let rows = [...rekeningList];
+    if (filterBank !== 'ALL') {
+      rows = rows.filter((r) => (r.kode_bank || '') === filterBank);
+    }
+    const q = searchQuery.trim().toLowerCase();
+    if (q) {
+      rows = rows.filter((r) =>
+        `${r.kode_bank || ''} ${r.no_rekening || ''} ${r.nama_rekening || ''} ${getRekeningPerusahaanLabel(r)}`
+          .toLowerCase()
+          .includes(q)
+      );
+    }
+    return rows;
+  }, [rekeningList, filterBank, searchQuery]);
+
+  const totalSaldoAll = useMemo(
+    () => rekeningList.reduce((total, rekening) => total + Number(rekening.saldo || 0), 0),
+    [rekeningList]
+  );
+
+  const totalSaldoFiltered = useMemo(
+    () => filteredRekeningList.reduce((total, rekening) => total + Number(rekening.saldo || 0), 0),
+    [filteredRekeningList]
+  );
+
+  const totalPages = Math.max(1, Math.ceil(filteredRekeningList.length / pageSize));
+  const pagedRekeningList = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredRekeningList.slice(start, start + pageSize);
+  }, [filteredRekeningList, page, pageSize]);
+
+  const bankFilterOptions = useMemo(() => {
+    return Array.from(new Set(rekeningList.map((r) => r.kode_bank).filter(Boolean)));
+  }, [rekeningList]);
+
+  const formatRekeningOptionLabel = (r: Rekening) =>
+    `${r.kode_bank || '-'} - ${r.no_rekening} - ${r.nama_rekening} (Saldo: Rp ${new Intl.NumberFormat('id-ID').format(r.saldo || 0)})`;
+
+  const togglePerusahaan = (id?: string) => {
+    if (!id) return;
+    setFormData((prev) => {
+      const current = prev.perusahaan_ids || [];
+      const exists = current.includes(id);
+      return {
+        ...prev,
+        perusahaan_ids: exists ? current.filter((item) => item !== id) : [...current, id],
+      };
+    });
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <div className="mx-auto max-w-7xl px-5 pb-8 pt-0 sm:px-6 lg:px-8 space-y-8">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h1 className="text-[28px] font-extrabold leading-tight text-slate-900">Master Rekening</h1>
+            <p className="mt-2 text-sm font-medium text-slate-500">Kelola data rekening</p>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              className="h-11 rounded-md border border-orange-500 bg-orange-500 px-6 text-sm font-bold text-white hover:bg-orange-600 hover:border-orange-600"
+              onClick={() => setTransferDialogOpen(true)}
+            >
+              Transfer Saldo
+            </Button>
+            <Button onClick={() => handleOpenModal()} className="h-11 rounded-md bg-blue-600 px-6 text-sm font-bold text-white shadow-[0_10px_22px_rgba(37,99,235,0.18)] hover:bg-blue-700">Tambah Rekening</Button>
+          </div>
+        </div>
+        <div className="mt-8 rounded-lg border border-slate-200 bg-white p-5 shadow-[0_12px_32px_rgba(15,23,42,0.05)]">
+          <div className="grid gap-5 md:grid-cols-[minmax(260px,390px)_160px_160px]">
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold text-slate-600">Cari</Label>
+              <div className="relative">
+                <Input
+                  id="search-rekening"
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setPage(1);
+                  }}
+                  placeholder="Bank / No rekening / Nama rekening / Perusahaan"
+                  className="h-12 rounded-md border-slate-200 bg-white pl-12 text-[15px] shadow-none"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold text-slate-600">Filter Bank</Label>
+              <AppSelect
+                value={filterBank}
+                onValueChange={(value) => {
+                  setFilterBank(value);
+                  setPage(1);
+                }}
+                options={[
+                  { value: 'ALL', label: 'Semua' },
+                  ...bankFilterOptions.map((bank) => ({ value: bank, label: bank })),
+                ]}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold text-slate-600">Per Halaman</Label>
+              <AppSelect
+                value={String(pageSize)}
+                onValueChange={(value) => {
+                  setPageSize(Number(value));
+                  setPage(1);
+                }}
+                options={[
+                  { value: '10', label: '10' },
+                  { value: '25', label: '25' },
+                  { value: '50', label: '50' },
+                ]}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-8 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_12px_32px_rgba(15,23,42,0.05)]">
+          <Table className="table-fixed w-full">
+            <TableHeader>
+              <TableRow className="bg-slate-50 border-b border-slate-200">
+                <TableHead className="w-40 px-6 py-4 font-semibold text-slate-900">Kode Bank</TableHead>
+                <TableHead className="w-56 px-6 py-4 font-semibold text-slate-900">No Rekening</TableHead>
+                <TableHead className="w-56 px-6 py-4 font-semibold text-slate-900">Nama Rekening</TableHead>
+                <TableHead className="w-52 px-6 py-4 font-semibold text-slate-900">Perusahaan</TableHead>
+                <TableHead className="w-40 px-6 py-4 text-right font-semibold text-slate-900">Aksi</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center py-12">
+                    <div className="flex flex-col items-center space-y-3">
+                      <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                      <p className="text-gray-600 font-medium">Memuat data rekening...</p>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : filteredRekeningList.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center py-12">
+                    <div className="flex flex-col items-center space-y-3">
+                      <div className="w-12 h-12 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-full flex items-center justify-center">
+                        <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                        </svg>
+                      </div>
+                      <p className="text-gray-600 font-medium">Belum ada data rekening</p>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                pagedRekeningList.map((r) => (
+                  <TableRow key={r._id} className="hover:bg-slate-50 transition-colors duration-200 border-b border-gray-100/50">
+                    <TableCell className="w-40 px-6 py-4 font-semibold text-gray-900">
+                      {r.kode_bank || '-'}
+                    </TableCell>
+                    <TableCell className="w-56 px-6 py-4 font-mono text-gray-900">{r.no_rekening}</TableCell>
+                    <TableCell className="w-56 px-6 py-4 font-medium text-gray-900">{r.nama_rekening}</TableCell>
+                    <TableCell className="w-52 px-6 py-4 font-medium text-gray-900">
+                      <span className="line-clamp-2" title={getRekeningPerusahaanLabel(r)}>
+                        {getRekeningPerusahaanLabel(r)}
+                      </span>
+                    </TableCell>
+                    <TableCell className="w-40 px-6 py-4 text-right">
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleOpenModal(r)}
+                          className="border-slate-300 hover:bg-slate-50 hover:border-slate-400 transition-all duration-200"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => r._id && handleDelete(r._id)}
+                          className="border-red-300 hover:bg-red-50 hover:border-red-400 text-red-600 hover:text-red-700 transition-all duration-200"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+          <div className="flex items-center justify-between p-4 border-t border-gray-200">
+            <div className="text-sm text-gray-600">
+              Total Data: {filteredRekeningList.length}
+            </div>
+            <div className="text-sm text-gray-600">
+              Halaman {page} dari {totalPages}
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1}
+              >
+                Sebelumnya
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages}
+              >
+                Berikutnya
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        <ModalForm open={modalOpen} onOpenChange={setModalOpen} title={editId ? 'Edit Rekening' : 'Tambah Rekening'}>
+          <form onSubmit={handleSubmit} className="space-y-6 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="bank_id" className="text-sm font-semibold text-slate-700">Kode Bank</Label>
+              <AppSelect
+                value={formData.bank_id}
+                onValueChange={(value) => setFormData((prev) => ({ ...prev, bank_id: value }))}
+                placeholder="Pilih Kode Bank"
+                options={bankList.map((b) => ({
+                  value: b._id,
+                  label: `${b.kode_bank} - ${b.nama_bank}`,
+                }))}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label className="text-sm font-semibold text-slate-700">Perusahaan</Label>
+              <div className="bg-white border border-slate-200 rounded-md p-3 max-h-48 overflow-y-auto space-y-2">
+                {perusahaanList.length === 0 ? (
+                  <p className="text-sm text-slate-500">Belum ada data perusahaan.</p>
+                ) : (
+                  perusahaanList.map((p) => {
+                    const checked = !!p._id && (formData.perusahaan_ids || []).includes(p._id);
+                    return (
+                      <label key={p._id} className="flex items-center gap-3 text-sm text-slate-800 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => togglePerusahaan(p._id)}
+                          className="h-4 w-4 rounded border-slate-300"
+                        />
+                        <span>{p.kode_perusahaan} - {p.nama_perusahaan}</span>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+              <p className="text-xs text-slate-500">Pilih satu atau beberapa perusahaan yang boleh memakai rekening ini.</p>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="no_rekening" className="text-sm font-semibold text-slate-700">No Rekening</Label>
+              <Input
+                id="no_rekening"
+                name="no_rekening"
+                value={formData.no_rekening}
+                onChange={handleChange}
+                required
+                maxLength={30}
+                className="h-12 rounded-md border-slate-200 bg-white px-4 text-[15px] font-mono text-slate-700"
+                autoComplete="off"
+                placeholder="Masukkan no rekening"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="nama_rekening" className="text-sm font-semibold text-slate-700">Nama Rekening</Label>
+              <Input
+                id="nama_rekening"
+                name="nama_rekening"
+                value={formData.nama_rekening}
+                onChange={handleChange}
+                required
+                maxLength={100}
+                className="h-12 rounded-md border-slate-200 bg-white px-4 text-[15px] text-slate-700"
+                autoComplete="off"
+                placeholder="Masukkan nama rekening"
+              />
+            </div>
+            {!editId && (
+              <div className="grid gap-2">
+                <Label htmlFor="saldo" className="text-sm font-semibold text-slate-700">Saldo (Rp)</Label>
+                <Input
+                  id="saldo"
+                  name="saldo"
+                  type="text"
+                  value={saldoDisplay}
+                  onChange={handleChange}
+                  onBlur={handleSaldoBlur}
+                  className="h-12 rounded-md border-slate-200 bg-white px-4 text-[15px] font-mono text-slate-700"
+                  autoComplete="off"
+                  placeholder="0"
+                />
+              </div>
+            )}
+            <div className="flex justify-end gap-3 pt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleCloseModal}
+                className="border-slate-300 hover:bg-slate-50 transition-all duration-200"
+              >
+                Batal
+              </Button>
+              <Button
+                type="submit"
+                className="h-11 rounded-md bg-blue-600 px-6 text-sm font-bold text-white shadow-[0_8px_20px_rgba(37,99,235,0.12)] hover:bg-blue-700"
+                disabled={saveMutation.isPending}
+              >
+                {saveMutation.isPending ? 'Menyimpan...' : (editId ? 'Simpan Perubahan' : 'Tambah Rekening')}
+              </Button>
+            </div>
+          </form>
+        </ModalForm>
+
+        {/* Delete Confirmation Dialog */}
+        <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+          <AlertDialogContent className="bg-white border-slate-200 shadow-2xl">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="text-xl font-bold text-slate-900">
+                Konfirmasi Hapus
+              </AlertDialogTitle>
+              <AlertDialogDescription className="text-gray-600 text-base">
+                Apakah Anda yakin ingin menghapus data rekening ini?
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter className="gap-3">
+              <AlertDialogCancel>Batal</AlertDialogCancel>
+              <AlertDialogAction onClick={confirmDelete} className="bg-red-600 hover:bg-red-700 text-white">
+                Hapus
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <Dialog open={transferDialogOpen} onOpenChange={setTransferDialogOpen}>
+          <DialogContent className="sm:max-w-[560px]">
+            <DialogHeader>
+              <DialogTitle>Transfer Saldo Antar Rekening</DialogTitle>
+              <DialogDescription>
+                Pindahkan saldo dari rekening sumber ke rekening tujuan.
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleTransferSubmit} className="space-y-4">
+              <div className="grid gap-2">
+                <Label htmlFor="from_rekening_id">Rekening Sumber</Label>
+                <Select
+                  value={transferForm.from_rekening_id}
+                  onValueChange={(value) => setTransferForm((p) => ({ ...p, from_rekening_id: value }))}
+                >
+                  <SelectTrigger id="from_rekening_id" className="h-12 w-full rounded-md border border-slate-200 bg-white px-4 text-[15px] text-slate-700">
+                    <SelectValue placeholder="Pilih rekening sumber" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-64">
+                    {rekeningList.filter((r) => !!r._id).map((r) => (
+                      <SelectItem key={r._id} value={r._id as string}>
+                        <span className="block max-w-[460px] truncate" title={formatRekeningOptionLabel(r)}>
+                          {formatRekeningOptionLabel(r)}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="to_rekening_id">Rekening Tujuan</Label>
+                <Select
+                  value={transferForm.to_rekening_id}
+                  onValueChange={(value) => setTransferForm((p) => ({ ...p, to_rekening_id: value }))}
+                >
+                  <SelectTrigger id="to_rekening_id" className="h-12 w-full rounded-md border border-slate-200 bg-white px-4 text-[15px] text-slate-700">
+                    <SelectValue placeholder="Pilih rekening tujuan" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-64">
+                    {rekeningList.filter((r) => !!r._id).map((r) => (
+                      <SelectItem key={r._id} value={r._id as string}>
+                        <span className="block max-w-[460px] truncate" title={formatRekeningOptionLabel(r)}>
+                          {formatRekeningOptionLabel(r)}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="nominal_transfer">Nominal Transfer (Rp)</Label>
+                <Input
+                  id="nominal_transfer"
+                  value={transferNominalDisplay}
+                  onChange={(e) => {
+                    const raw = e.target.value.replace(/[^\d]/g, '');
+                    const amount = Number(raw || 0);
+                    setTransferForm((p) => ({ ...p, nominal: amount }));
+                    setTransferNominalDisplay(raw.replace(/\B(?=(\d{3})+(?!\d))/g, '.'));
+                  }}
+                  placeholder="0"
+                  required
+                  className="h-12 rounded-md border-slate-200 bg-white px-4 text-[15px] font-mono text-slate-700"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="tanggal_transfer">Tanggal</Label>
+                <Input
+                  id="tanggal_transfer"
+                  type="date"
+                  value={transferForm.tanggal}
+                  onChange={(e) => setTransferForm((p) => ({ ...p, tanggal: e.target.value }))}
+                  className="h-12 rounded-md border-slate-200 bg-white px-4 text-[15px] text-slate-700"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="ket_transfer">Keterangan</Label>
+                <Input
+                  id="ket_transfer"
+                  value={transferForm.keterangan}
+                  onChange={(e) => setTransferForm((p) => ({ ...p, keterangan: e.target.value }))}
+                  placeholder="Opsional"
+                />
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setTransferDialogOpen(false)}>
+                  Batal
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={transferMutation.isPending}
+                  className="h-11 rounded-md border border-orange-500 bg-orange-500 px-6 text-sm font-bold text-white hover:bg-orange-600 hover:border-orange-600"
+                >
+                  {transferMutation.isPending ? 'Memproses...' : 'Transfer Saldo'}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </div>
+  );
+}
