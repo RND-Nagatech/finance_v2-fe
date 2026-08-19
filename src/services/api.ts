@@ -1,4 +1,6 @@
 import axios from "axios";
+import { secureStorage } from "@/utils/secureStorage";
+import { getLoginFallbackUrl } from "@/utils/programInternalRedirect";
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:5103/api",
@@ -6,7 +8,7 @@ const api = axios.create({
 });
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("auth_token");
+  const token = secureStorage.getItem("auth_token");
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
@@ -15,9 +17,11 @@ api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401) {
-      localStorage.removeItem("auth_token");
-      localStorage.removeItem("user_name");
-      window.location.href = "/login";
+      const fallbackUrl = getLoginFallbackUrl();
+      secureStorage.removeItem("auth_token");
+      secureStorage.removeItem("user_name");
+      secureStorage.removeItem("user_role");
+      window.location.href = fallbackUrl;
     }
     return Promise.reject(err);
   }

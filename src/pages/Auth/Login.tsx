@@ -54,17 +54,23 @@ export default function Login() {
   // -------------------------
   const loginMutation = useMutation({
     mutationFn: async (credentials: { email: string; password: string }) => {
-      const response = await axiosInstance.post("/auth/login", credentials);
+      const response = await axiosInstance.post("/auth/login", {
+        username: credentials.email,
+        password: credentials.password,
+      });
       return response.data;
     },
     onSuccess: (data) => {
-      const { token, user } = data;
+      const { token, user } = data.data ?? data;
       if (handleWebsiteRoleRestriction(user?.role)) return;
       // Simpan token & user
+      const userName = user.name || user.username || email;
+      const userEmail = user.email || user.username || email;
       secureStorage.setItem("auth_token", token);
-      secureStorage.setItem("user_name", user.name);
+      secureStorage.setItem("user_name", userName);
       secureStorage.setItem("user_role", user.role);
-      setUser({ name: user.name, email: user.email, role: user.role });
+      secureStorage.removeItem("auth_source");
+      setUser({ name: userName, email: userEmail, role: user.role });
       setCharacterState("success");
       toast.success("Login berhasil!");
       navigate("/dashboard");
@@ -148,6 +154,7 @@ export default function Login() {
         secureStorage.setItem("auth_token", "webauthn_dummy_token");
         secureStorage.setItem("user_name", userName);
         secureStorage.setItem("user_role", userRole);
+        secureStorage.removeItem("auth_source");
         setUser({ name: userName, email, role: userRole });
         setCharacterState("success");
         toast.success("Login YubiKey berhasil!");

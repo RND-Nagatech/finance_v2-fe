@@ -39,6 +39,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
+import { isProgramInternalSession } from '@/utils/programInternalRedirect';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -101,6 +102,7 @@ export default function AppSidebar() {
     new_password: '',
     confirm_password: '',
   });
+  const isSsoSession = isProgramInternalSession();
 
   const confirmLogout = () => {
     setShowLogoutDialog(false);
@@ -173,15 +175,17 @@ export default function AppSidebar() {
                       <p className="mt-0.5 truncate text-xs font-medium text-slate-400">{roleLabel}</p>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setChangePasswordOpen(true)}
-                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/[0.08] bg-slate-950/25 text-slate-300 transition-colors hover:bg-white/[0.08] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/70"
-                    title="Ganti Password"
-                    aria-label="Ganti Password"
-                  >
-                    <KeyRound className="h-4 w-4" />
-                  </button>
+                  {!isSsoSession && (
+                    <button
+                      type="button"
+                      onClick={() => setChangePasswordOpen(true)}
+                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/[0.08] bg-slate-950/25 text-slate-300 transition-colors hover:bg-white/[0.08] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/70"
+                      title="Ganti Password"
+                      aria-label="Ganti Password"
+                    >
+                      <KeyRound className="h-4 w-4" />
+                    </button>
+                  )}
                 </div>
               </div>
             )}
@@ -323,30 +327,32 @@ export default function AppSidebar() {
             <div className="mb-3 h-px bg-gradient-to-r from-transparent via-slate-600/45 to-transparent" />
             <SidebarFooter>
               <SidebarMenu className="space-y-1.5">
-                <SidebarMenuItem>
-                  <AlertDialog open={showLogoutDialog} onOpenChange={setShowLogoutDialog}>
-                    <AlertDialogTrigger asChild>
-                      <SidebarMenuButton className={cn(mainButtonClass, 'text-slate-400 hover:bg-white/[0.055] hover:text-white')}>
-                        <LogOut className="h-5 w-5" />
-                        <span className="font-semibold">Logout</span>
-                      </SidebarMenuButton>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent className="border-red-300 bg-white/95 shadow-2xl">
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Konfirmasi Logout</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          Apakah Anda yakin ingin keluar dari aplikasi? Anda akan diarahkan ke halaman login.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter className="gap-3">
-                        <AlertDialogCancel>Batal</AlertDialogCancel>
-                        <AlertDialogAction onClick={confirmLogout} className="bg-red-600 text-white hover:bg-red-700">
-                          Ya, Logout
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                </SidebarMenuItem>
+                {!isSsoSession && (
+                  <SidebarMenuItem>
+                    <AlertDialog open={showLogoutDialog} onOpenChange={setShowLogoutDialog}>
+                      <AlertDialogTrigger asChild>
+                        <SidebarMenuButton className={cn(mainButtonClass, 'text-slate-400 hover:bg-white/[0.055] hover:text-white')}>
+                          <LogOut className="h-5 w-5" />
+                          <span className="font-semibold">Logout</span>
+                        </SidebarMenuButton>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent className="border-red-300 bg-white/95 shadow-2xl">
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Konfirmasi Logout</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Apakah Anda yakin ingin keluar dari aplikasi? Anda akan diarahkan ke halaman login.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter className="gap-3">
+                          <AlertDialogCancel>Batal</AlertDialogCancel>
+                          <AlertDialogAction onClick={confirmLogout} className="bg-red-600 text-white hover:bg-red-700">
+                            Ya, Logout
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </SidebarMenuItem>
+                )}
               </SidebarMenu>
             </SidebarFooter>
           </div>

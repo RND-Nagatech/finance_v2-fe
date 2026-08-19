@@ -17,6 +17,8 @@ import { ProtectedRoute } from "./components/ProtectedRoute";
 import { MainLayout } from "./components/MainLayout";
 import Login from "./pages/Auth/Login";
 import Register from "./pages/Auth/Register";
+import SsoCallback from "./pages/Auth/SsoCallback";
+import SsoLogout from "./pages/Auth/SsoLogout";
 import Dashboard from "./pages/Dashboard";
 import Kategori from "./pages/MasterData/Kategori";
 import SubKategori from "./pages/MasterData/SubKategori";
@@ -28,6 +30,7 @@ import PublicDashboard from "./pages/public-dashboard";
 import Users from "./pages/Users";
 import SummaryTools from "./pages/SummaryTools";
 import ReconciliationTool from "./pages/ReconciliationTool";
+import { getLoginFallbackUrl, isProgramInternalSession } from "@/utils/programInternalRedirect";
 
 const queryClient = new QueryClient();
 
@@ -38,6 +41,7 @@ const App = () => (
       <Sonner />
       <ToastContainer position="top-right" autoClose={3000} />
       <FiscalYearInitializer />
+      <ProgramInternalLogoutListener />
       <BrowserRouter>
         <Routes>
                     <Route
@@ -73,6 +77,8 @@ const App = () => (
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/sso/callback" element={<SsoCallback />} />
+          <Route path="/sso/logout" element={<SsoLogout />} />
           
           <Route
             path="/dashboard"
@@ -198,6 +204,21 @@ function FiscalYearInitializer() {
       console.debug('[FiscalYearInitializer] no activeYear returned from server');
     }
   }, [activeYear, setFiscalYear]);
+
+  return null;
+}
+
+function ProgramInternalLogoutListener() {
+  useEffect(() => {
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === "auth_token" && !event.newValue && isProgramInternalSession()) {
+        window.location.replace(getLoginFallbackUrl());
+      }
+    };
+
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
 
   return null;
 }
