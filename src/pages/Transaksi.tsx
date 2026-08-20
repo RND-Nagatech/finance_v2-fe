@@ -13,6 +13,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import axiosInstance from '@/api/axiosInstance';
 import { fetchUsers } from '@/api/users';
+import { isProgramInternalSession } from '@/utils/programInternalRedirect';
 import { useAppStore } from '@/store/useAppStore';
 import { resolveAttachmentUrl } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -363,6 +364,7 @@ export default function Transaksi() {
 
   // Tahun fiskal global dari store
   const { fiscalYear, user } = useAppStore();
+  const isSsoSession = isProgramInternalSession();
 
   // Fetch rekening for dropdown
   const { data: rekeningList = [] } = useQuery({
@@ -712,6 +714,7 @@ export default function Transaksi() {
       setEditModalOpen(false);
       setEditData(null);
       queryClient.invalidateQueries({ queryKey: ['transaksi'] });
+      queryClient.invalidateQueries({ queryKey: ['rekening-all'] });
       toast.success('Transaksi berhasil diupdate!');
     } catch (err: any) {
       const msg = err?.response?.data?.message || 'Gagal update transaksi.';
@@ -753,6 +756,7 @@ export default function Transaksi() {
         }
       });
       queryClient.invalidateQueries({ queryKey: ['transaksi'] });
+      queryClient.invalidateQueries({ queryKey: ['rekening-all'] });
       toast.success('Transaksi berhasil dihapus!');
       setDeleteDialogOpen(false);
       setDeleteData(null);
@@ -803,6 +807,7 @@ export default function Transaksi() {
   const { data: usersList = [] } = useQuery({
     queryKey: ['users'],
     queryFn: fetchUsers,
+    enabled: !isSsoSession,
   });
 
   const [formData, setFormData] = useState({
@@ -1427,6 +1432,29 @@ export default function Transaksi() {
     },
   });
 
+  const updateRekeningCacheAfterPendingCreate = (rekening: any, payload: any) => {
+    if (!rekening || payload?.transaction_mode === 'FINANCE_ONLY') return;
+
+    const nilai = Number(payload?.nilai || 0);
+    if (!Number.isFinite(nilai) || nilai === 0) return;
+
+    const delta = payload?.kategori === 'PENDAPATAN' ? nilai : -nilai;
+    queryClient.setQueryData(['rekening-all'], (oldData: any) => {
+      if (!Array.isArray(oldData)) return oldData;
+      return oldData.map((item: any) => {
+        const isSameRekening =
+          (rekening._id && item._id === rekening._id) ||
+          (item.kode_bank === rekening.kode_bank && item.no_rekening === rekening.no_rekening);
+
+        if (!isSameRekening) return item;
+        return {
+          ...item,
+          saldo_on_hold: Number(item.saldo_on_hold || 0) + delta,
+        };
+      });
+    });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     // Validasi field wajib
@@ -1495,7 +1523,9 @@ export default function Transaksi() {
         }
       }
 
+      updateRekeningCacheAfterPendingCreate(rekeningObj, payload);
       queryClient.invalidateQueries({ queryKey: ['transaksi'] });
+      queryClient.invalidateQueries({ queryKey: ['rekening-all'] });
       toast.success('Transaksi berhasil ditambahkan!');
       setFormData({
         kategori_id: '',
@@ -1832,7 +1862,10 @@ export default function Transaksi() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALL">Semua</SelectItem>
-                  {Array.from(new Set((usersList || []).map((u: any) => (u?.name || u?.username || '').trim()).filter(Boolean))).map((userName) => (
+                  {Array.from(new Set([
+                    ...(usersList || []).map((u: any) => (u?.name || u?.username || '').trim()).filter(Boolean),
+                    user?.name,
+                  ].filter(Boolean))).map((userName) => (
                     <SelectItem key={userName} value={userName}>{userName}</SelectItem>
                   ))}
                 </SelectContent>
@@ -2157,25 +2190,34 @@ export default function Transaksi() {
                       </SelectContent>
                     </Select>
                   </div>
-                  {selectedAddRekening && (
-                    <div className="md:col-span-2 rounded-xl border border-emerald-200 bg-emerald-50/70 px-4 py-3">
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
-                            Saldo Rekening Saat Ini
-                          </p>
-                          <p className="mt-1 text-2xl font-bold text-emerald-800">
-                            {formatCurrency(Number(selectedAddRekening.saldo || 0))}
-                          </p>
-                        </div>
-                        <div className="text-right text-xs text-emerald-700">
-                          <p>{selectedAddRekening.kode_bank || '-'}</p>
-                          <p>{selectedAddRekening.no_rekening || '-'}</p>
-                          <p>{selectedAddRekening.nama_rekening || '-'}</p>
+                  {selectedAddRekening && (() => {
+                    const saldoValid = Number(selectedAddRekening.saldo || 0);
+                    const saldoOnHold = Number(selectedAddRekening.saldo_on_hold || 0);
+                    const saldoPreview = saldoValid + saldoOnHold;
+                    return (
+                      <div className="md:col-span-2 rounded-xl border border-emerald-200 bg-emerald-50/70 px-4 py-3">
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                              Saldo Rekening Estimasi
+                            </p>
+                            <p className="mt-1 text-2xl font-bold text-emerald-800">
+                              {formatCurrency(saldoPreview)}
+                            </p>
+                            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs font-medium text-emerald-700">
+                              <span>Saldo valid: {formatCurrency(saldoValid)}</span>
+                              <span>On hold: {saldoOnHold >= 0 ? '+' : '-'}{formatCurrency(Math.abs(saldoOnHold))}</span>
+                            </div>
+                          </div>
+                          <div className="text-right text-xs text-emerald-700">
+                            <p>{selectedAddRekening.kode_bank || '-'}</p>
+                            <p>{selectedAddRekening.no_rekening || '-'}</p>
+                            <p>{selectedAddRekening.nama_rekening || '-'}</p>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                   {/* Tanggal */}
                   <div className="grid gap-2">
                     <Label htmlFor="tanggal" className="text-sm font-semibold text-slate-700">Tanggal</Label>
@@ -3201,7 +3243,11 @@ export default function Transaksi() {
               const nilaiTransaksi = Number(validateRow.nilai || 0);
               const deltaSaldo = validateRow.kategori === 'PENDAPATAN' ? nilaiTransaksi : -nilaiTransaksi;
               const isPenambahan = deltaSaldo >= 0;
-              const saldoAkhir = Number(validationRekening.saldo || 0) + deltaSaldo;
+              const saldoValid = Number(validationRekening.saldo || 0);
+              const saldoOnHold = Number(validationRekening.saldo_on_hold || 0);
+              const saldoEstimasi = saldoValid + saldoOnHold;
+              const saldoOnHoldAkhir = validateRow.saldo_on_hold_applied ? saldoOnHold - deltaSaldo : saldoOnHold;
+              const saldoAkhir = saldoValid + deltaSaldo;
               return (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
                   <h3 className="text-m font-semibold text-blue-900 mb-2">Proyeksi Saldo Rekening</h3>
@@ -3215,8 +3261,18 @@ export default function Transaksi() {
                       <span className="font-medium">{validationRekening.nama_rekening}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span>Saldo Awal:</span>
-                      <span className="font-medium">{formatCurrency(validationRekening.saldo)}</span>
+                      <span>Saldo Valid:</span>
+                      <span className="font-medium">{formatCurrency(saldoValid)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Saldo On Hold:</span>
+                      <span className={`font-medium ${saldoOnHold >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {saldoOnHold >= 0 ? '+' : '-'}{formatCurrency(Math.abs(saldoOnHold))}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Saldo Estimasi:</span>
+                      <span className="font-medium">{formatCurrency(saldoEstimasi)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span>
@@ -3227,9 +3283,15 @@ export default function Transaksi() {
                       </span>
                     </div>
                     <div className="flex justify-between border-t border-blue-300 pt-1">
-                      <span className="font-semibold">Saldo Akhir:</span>
+                      <span className="font-semibold">Saldo Valid Setelah Validasi:</span>
                       <span className="font-semibold text-blue-900">
                         {formatCurrency(saldoAkhir)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-semibold">On Hold Setelah Validasi:</span>
+                      <span className={`font-semibold ${saldoOnHoldAkhir >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                        {saldoOnHoldAkhir >= 0 ? '+' : '-'}{formatCurrency(Math.abs(saldoOnHoldAkhir))}
                       </span>
                     </div>
                   </div>

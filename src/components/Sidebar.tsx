@@ -16,6 +16,7 @@ import {
   Wrench,
   Users,
   Wallet,
+  WalletCards,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import axiosInstance from '@/api/axiosInstance';
@@ -92,7 +93,7 @@ export default function AppSidebar() {
   const { user, logout } = useAppStore();
   const [isMasterOpen, setIsMasterOpen] = useState(location.pathname.startsWith('/master'));
   const [isToolsOpen, setIsToolsOpen] = useState(
-    location.pathname === '/summary-tools' || location.pathname === '/reconciliation-tool'
+    location.pathname === '/summary-tools' || location.pathname === '/reconciliation-tool' || location.pathname === '/saldo-on-hold-tools'
   );
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
@@ -143,6 +144,7 @@ export default function AppSidebar() {
   const toolItems = [
     { to: '/summary-tools', label: 'Summary Tools', icon: DatabaseZap },
     { to: '/reconciliation-tool', label: 'Reconciliation Tool', icon: Scale },
+    { to: '/saldo-on-hold-tools', label: 'Saldo On Hold', icon: WalletCards },
   ];
   const userRole = String(user?.role || '').toLowerCase();
   const roleLabel = userRole === 'superuser' ? 'Administrator' : userRole ? userRole.charAt(0).toUpperCase() + userRole.slice(1) : 'Account User';

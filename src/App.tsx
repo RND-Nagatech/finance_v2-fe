@@ -30,6 +30,7 @@ import PublicDashboard from "./pages/public-dashboard";
 import Users from "./pages/Users";
 import SummaryTools from "./pages/SummaryTools";
 import ReconciliationTool from "./pages/ReconciliationTool";
+import SaldoOnHoldTools from "./pages/SaldoOnHoldTools";
 import { getLoginFallbackUrl, isProgramInternalSession } from "@/utils/programInternalRedirect";
 
 const queryClient = new QueryClient();
@@ -177,6 +178,16 @@ const App = () => (
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/saldo-on-hold-tools"
+            element={
+              <ProtectedRoute>
+                <MainLayout>
+                  <SaldoOnHoldTools />
+                </MainLayout>
+              </ProtectedRoute>
+            }
+          />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
@@ -222,3 +233,4 @@ function ProgramInternalLogoutListener() {
 
   return null;
 }
+
