@@ -17,6 +17,7 @@ import { isProgramInternalSession } from '@/utils/programInternalRedirect';
 import { useAppStore } from '@/store/useAppStore';
 import { resolveAttachmentUrl } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import {
   Pagination,
   PaginationContent,
@@ -78,6 +79,7 @@ interface Transaksi {
   attachments?: IAttachment[];
   is_validated?: boolean;
   validator_notes?: string;
+  status_final?: boolean;
   is_special_transaction?: boolean;
   transaction_mode?: 'NORMAL' | 'SPECIAL' | 'FINANCE_ONLY';
   source_type?: 'REKENING';
@@ -651,6 +653,7 @@ export default function Transaksi() {
         keterangan: detail.keterangan || '',
         is_special_transaction: Boolean(detail.is_special_transaction),
         transaction_mode: detail.transaction_mode || (detail.is_special_transaction ? 'SPECIAL' : 'NORMAL'),
+        status_final: detail.status_final !== false,
         source_type: detail.source_type || 'REKENING',
         perusahaan_id: perusahaanList.find((p) => p.nama_perusahaan === detail.nama_perusahaan)?._id || '',
         rekening_id: rekeningList.find((r) => r.no_rekening === detail.no_rekening && r.kode_bank === detail.kode_bank)?._id || '',
@@ -704,6 +707,7 @@ export default function Transaksi() {
         keterangan: editData.keterangan,
         is_special_transaction: Boolean(editData.is_special_transaction),
         transaction_mode: editData.transaction_mode || (editData.is_special_transaction ? 'SPECIAL' : 'NORMAL'),
+        status_final: editData.status_final !== false,
         kode_perusahaan: perusahaanObj?.kode_perusahaan || '',
         nama_perusahaan: perusahaanObj?.nama_perusahaan || '',
         source_type: 'REKENING',
@@ -784,6 +788,27 @@ export default function Transaksi() {
       toast.error(msg);
     }
   };
+
+  const handleToggleStatusFinal = async (row: any) => {
+    const nextStatus = row.status_final === false;
+    try {
+      await axiosInstance.put(`/transaksi/${row._id}/status-final`, { status_final: nextStatus });
+      queryClient.setQueryData(['transaksi'], (oldData: any) => {
+        if (!oldData?.data || !Array.isArray(oldData.data)) return oldData;
+        return {
+          ...oldData,
+          data: oldData.data.map((item: any) =>
+            item._id === row._id ? { ...item, status_final: nextStatus } : item
+          ),
+        };
+      });
+      queryClient.invalidateQueries({ queryKey: ['transaksi'] });
+      if (refetch) refetch();
+      toast.success(nextStatus ? 'Transaksi ditandai final.' : 'Transaksi ditandai belum final.');
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || 'Gagal mengubah status final.');
+    }
+  };
   // ...existing code...
   const queryClient = useQueryClient();
   const [page, setPage] = useState<number>(1);
@@ -822,6 +847,7 @@ export default function Transaksi() {
     perusahaan_id: '', // new
     rekening_id: '',   // new
     source_type: 'REKENING' as 'REKENING',
+    status_final: true,
     is_special_transaction: false,
     transaction_mode: 'NORMAL' as 'NORMAL' | 'SPECIAL' | 'FINANCE_ONLY',
   });
@@ -1492,6 +1518,7 @@ export default function Transaksi() {
       keterangan: formData.keterangan || '',
       is_special_transaction: Boolean(formData.is_special_transaction),
       transaction_mode: formData.transaction_mode || (formData.is_special_transaction ? 'SPECIAL' : 'NORMAL'),
+      status_final: formData.status_final !== false,
       // Properti perusahaan
       kode_perusahaan: perusahaanObj?.kode_perusahaan || '',
       nama_perusahaan: perusahaanObj?.nama_perusahaan || '',
@@ -1539,6 +1566,7 @@ export default function Transaksi() {
         perusahaan_id: '',
         rekening_id: '',
         source_type: 'REKENING',
+        status_final: true,
         is_special_transaction: false,
         transaction_mode: 'NORMAL',
       });
@@ -1575,6 +1603,7 @@ export default function Transaksi() {
       perusahaan_id: '',
       rekening_id: '',
       source_type: 'REKENING',
+      status_final: true,
       is_special_transaction: false,
       transaction_mode: 'NORMAL',
     });
@@ -2363,6 +2392,17 @@ export default function Transaksi() {
                     Normal: memengaruhi dashboard dan rekening. Rekening Only: hanya rekening. Dashboard Only: hanya dashboard/agregasi.
                   </p>
                 </div>
+                <div className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                  <div>
+                    <Label htmlFor="status_final" className="text-sm font-semibold text-slate-700">Status Final</Label>
+                    <p className="mt-1 text-xs text-slate-500">Matikan jika transaksi masih draft/belum final.</p>
+                  </div>
+                  <Switch
+                    id="status_final"
+                    checked={formData.status_final !== false}
+                    onCheckedChange={(checked) => setFormData({ ...formData, status_final: checked })}
+                  />
+                </div>
                 <div className="grid gap-2 mt-2">
                   <Label htmlFor="keterangan" className="text-sm font-semibold text-slate-700">Keterangan</Label>
                   <Input
@@ -2529,7 +2569,8 @@ export default function Transaksi() {
                       className={
                         `border-b border-slate-100 transition-colors hover:bg-slate-50` +
                         (typeData === 'Detail' && expandedRows[row._id || String(idx)] ? ' pb-6 align-top' : '') +
-                        (row.is_validated ? ' bg-green-50 !border-green-300 hover:bg-green-200 hover:!border-green-400' : '')
+                        (row.is_validated ? ' bg-green-50 !border-green-300 hover:bg-green-200 hover:!border-green-400' : '') +
+                        (typeData === 'Detail' && row.status_final === false ? ' bg-amber-50 !border-amber-300 hover:bg-amber-100 hover:!border-amber-400' : '')
                       }
                     >
                       {typeData === 'Detail' && (
@@ -2553,9 +2594,16 @@ export default function Transaksi() {
                         <div className="flex flex-col gap-1">
                           <span>{row.kategori}</span>
                           {typeData === 'Detail' && (
-                            <span className={`inline-flex w-fit whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold leading-none ${getTransactionTypeBadgeClass(row)}`}>
-                              {getTransactionTypeChipLabel(row)}
-                            </span>
+                            <div className="flex flex-wrap gap-1">
+                              <span className={`inline-flex w-fit whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold leading-none ${getTransactionTypeBadgeClass(row)}`}>
+                                {getTransactionTypeChipLabel(row)}
+                              </span>
+                              {row.status_final === false && (
+                                <span className="inline-flex w-fit whitespace-nowrap rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[11px] font-semibold leading-none text-amber-800">
+                                  Belum Final
+                                </span>
+                              )}
+                            </div>
                           )}
                         </div>
                       </TableCell>
@@ -2612,7 +2660,7 @@ export default function Transaksi() {
                                       Upload
                                     </DropdownMenuItem>
                                   )}
-                                  {(!row.is_validated && (user?.role === 'superuser' || user?.role === 'corsec')) && (
+                                  {(!row.is_validated && row.status_final !== false && (user?.role === 'superuser' || user?.role === 'corsec')) && (
                                     <DropdownMenuItem
                                       onClick={() => handleValidate(row)}
                                       className="cursor-pointer text-blue-600 focus:text-blue-600"
@@ -2625,6 +2673,17 @@ export default function Transaksi() {
                                   )}
                                 </>
                               ) : null}
+                              {(user?.role === 'superuser' || user?.role === 'corsec' || user?.role === 'finance') && (
+                                <DropdownMenuItem
+                                  onClick={() => handleToggleStatusFinal(row)}
+                                  className="cursor-pointer text-amber-700 focus:text-amber-700"
+                                >
+                                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  </svg>
+                                  {row.status_final === false ? 'Tandai Final' : 'Tandai Belum Final'}
+                                </DropdownMenuItem>
+                              )}
                               {(user?.role === 'superuser' || (!row.is_validated && user?.role === 'finance')) && (
                                 <DropdownMenuItem
                                   onClick={() => handleDelete(row)}
@@ -2973,6 +3032,17 @@ export default function Transaksi() {
                       <p className="text-xs text-gray-600">
                         Normal: memengaruhi dashboard dan rekening. Rekening Only: hanya rekening. Dashboard Only: hanya dashboard/agregasi.
                       </p>
+                    </div>
+                    <div className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 md:col-span-2">
+                      <div>
+                        <Label htmlFor="edit-status_final" className="text-sm font-semibold text-gray-700">Status Final</Label>
+                        <p className="mt-1 text-xs text-gray-500">Matikan jika transaksi masih draft/belum final.</p>
+                      </div>
+                      <Switch
+                        id="edit-status_final"
+                        checked={editData.status_final !== false}
+                        onCheckedChange={(checked) => setEditData({ ...editData, status_final: checked })}
+                      />
                     </div>
                     <div className="grid gap-2 md:col-span-2">
                       <Label htmlFor="edit-keterangan" className="text-sm font-semibold text-gray-700">Keterangan</Label>
