@@ -5,6 +5,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import {
   BookOpenCheck,
   ChevronDown,
+  Coins,
   Database,
   DatabaseZap,
   KeyRound,
@@ -92,6 +93,7 @@ export default function AppSidebar() {
   const navigate = useNavigate();
   const { user, logout } = useAppStore();
   const [isMasterOpen, setIsMasterOpen] = useState(location.pathname.startsWith('/master'));
+  const [isAssetOpen, setIsAssetOpen] = useState(location.pathname.startsWith('/assets'));
   const [isToolsOpen, setIsToolsOpen] = useState(
     location.pathname === '/summary-tools' || location.pathname === '/reconciliation-tool' || location.pathname === '/saldo-on-hold-tools'
   );
@@ -147,8 +149,13 @@ export default function AppSidebar() {
     { to: '/saldo-on-hold-tools', label: 'Saldo On Hold', icon: WalletCards },
   ];
   const userRole = String(user?.role || '').toLowerCase();
+  const assetItems = [
+    { to: '/assets/types', label: 'Jenis Asset' },
+    { to: '/assets', label: 'Asset' },
+  ];
   const roleLabel = userRole === 'superuser' ? 'Administrator' : userRole ? userRole.charAt(0).toUpperCase() + userRole.slice(1) : 'Account User';
   const isToolsActive = toolItems.some((item) => location.pathname === item.to);
+  const isAssetActive = assetItems.some((item) => location.pathname === item.to);
 
   return (
     <SidebarProvider>
@@ -256,6 +263,39 @@ export default function AppSidebar() {
                       <ActiveBar active={location.pathname === '/transaksi'} />
                     </SidebarMenuButton>
                   </NavLink>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    onClick={() => setIsAssetOpen((v) => !v)}
+                    isActive={isAssetActive}
+                    className={mainButtonClass}
+                    aria-expanded={isAssetOpen}
+                    aria-controls="asset-submenu"
+                  >
+                    <Coins className="h-5 w-5" />
+                    <span className="font-semibold">Asset</span>
+                    <ChevronDown className={cn('ml-auto h-4 w-4 transition-transform duration-200', isAssetOpen && 'rotate-180')} />
+                    <ActiveBar active={isAssetActive} />
+                  </SidebarMenuButton>
+                  {isAssetOpen && (
+                    <SidebarMenuSub id="asset-submenu" className="ml-6 mt-1.5 space-y-0.5 border-l border-slate-600/35 pl-2.5">
+                      {assetItems.map((item) => {
+                        const isActive = location.pathname === item.to;
+                        return (
+                          <SidebarMenuSubItem key={item.to}>
+                            <NavLink to={item.to}>
+                              <SidebarMenuSubButton asChild isActive={isActive} className={subButtonClass}>
+                                <div className="flex items-center gap-2">
+                                  <span className={cn(subDotClass, isActive && 'bg-blue-300 shadow-[0_0_0_3px_rgba(96,165,250,0.14)]')} />
+                                  <span className="font-medium">{item.label}</span>
+                                </div>
+                              </SidebarMenuSubButton>
+                            </NavLink>
+                          </SidebarMenuSubItem>
+                        );
+                      })}
+                    </SidebarMenuSub>
+                  )}
                 </SidebarMenuItem>
 
                 <SectionLabel>System</SectionLabel>

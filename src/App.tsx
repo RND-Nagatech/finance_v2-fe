@@ -24,6 +24,8 @@ import Kategori from "./pages/MasterData/Kategori";
 import SubKategori from "./pages/MasterData/SubKategori";
 import Akun from "./pages/MasterData/Akun";
 import Transaksi from "./pages/Transaksi";
+import Assets from "./pages/Assets";
+import AssetTypes from "./pages/AssetTypes";
 import TutupBuku from "./pages/TutupBuku";
 import NotFound from "./pages/NotFound";
 import PublicDashboard from "./pages/public-dashboard";
@@ -148,6 +150,26 @@ const App = () => (
             }
           />
           <Route
+            path="/assets"
+            element={
+              <ProtectedRoute>
+                <MainLayout>
+                  <Assets />
+                </MainLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/assets/types"
+            element={
+              <ProtectedRoute>
+                <MainLayout>
+                  <AssetTypes />
+                </MainLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/tutupbuku"
             element={
               <ProtectedRoute>
@@ -233,4 +255,3 @@ function ProgramInternalLogoutListener() {
 
   return null;
 }
-
