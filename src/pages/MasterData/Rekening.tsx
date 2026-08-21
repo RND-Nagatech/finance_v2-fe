@@ -322,27 +322,67 @@ export default function Rekening() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="mx-auto max-w-7xl px-5 pb-8 pt-0 sm:px-6 lg:px-8 space-y-8">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-100 relative overflow-hidden">
+      <div className="absolute inset-0 bg-grid-slate-100 [mask-image:linear-gradient(0deg,white,rgba(255,255,255,0.6))] -z-10" />
+      <div className="absolute top-0 right-0 -z-10">
+        <div className="w-72 h-72 bg-gradient-to-bl from-blue-400/20 to-indigo-600/20 rounded-full blur-3xl" />
+      </div>
+      <div className="absolute bottom-0 left-0 -z-10">
+        <div className="w-96 h-96 bg-gradient-to-tr from-indigo-400/20 to-purple-600/20 rounded-full blur-3xl" />
+      </div>
+
+      <div className="container mx-auto px-6 py-8 space-y-8">
+        <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-[28px] font-extrabold leading-tight text-slate-900">Master Rekening</h1>
-            <p className="mt-2 text-sm font-medium text-slate-500">Kelola data rekening</p>
+            <h1 className="text-4xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
+              Master Rekening
+            </h1>
+            <p className="text-gray-600 mt-2">Kelola data rekening</p>
           </div>
           <div className="flex gap-2">
             <Button
-              className="h-11 rounded-md border border-orange-500 bg-orange-500 px-6 text-sm font-bold text-white hover:bg-orange-600 hover:border-orange-600"
+              variant="outline"
+              className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"
               onClick={() => setTransferDialogOpen(true)}
             >
               Transfer Saldo
             </Button>
-            <Button onClick={() => handleOpenModal()} className="h-11 rounded-md bg-blue-600 px-6 text-sm font-bold text-white shadow-[0_10px_22px_rgba(37,99,235,0.18)] hover:bg-blue-700">Tambah Rekening</Button>
+            <Button
+              onClick={() => handleOpenModal()}
+              className="bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white font-semibold px-6 py-3 rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-[1.02]"
+            >
+              Tambah Rekening
+            </Button>
           </div>
         </div>
-        <div className="mt-8 rounded-lg border border-slate-200 bg-white p-5 shadow-[0_12px_32px_rgba(15,23,42,0.05)]">
-          <div className="grid gap-5 md:grid-cols-[minmax(260px,390px)_160px_160px]">
+
+        {canViewSaldo && (
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="rounded-lg border border-blue-200 bg-white/80 p-5 shadow-sm">
+              <p className="text-sm font-semibold text-blue-700">Total Saldo Ditampilkan</p>
+              <p className="mt-2 text-3xl font-bold text-gray-950">
+                Rp {formatCurrency(totalSaldoFiltered)}
+              </p>
+              <p className="mt-1 text-sm text-gray-500">
+                Dari {filteredRekeningList.length} rekening sesuai filter saat ini
+              </p>
+            </div>
+            <div className="rounded-lg border border-indigo-200 bg-white/80 p-5 shadow-sm">
+              <p className="text-sm font-semibold text-indigo-700">Total Saldo Semua Rekening</p>
+              <p className="mt-2 text-3xl font-bold text-gray-950">
+                Rp {formatCurrency(totalSaldoAll)}
+              </p>
+              <p className="mt-1 text-sm text-gray-500">
+                Dari {rekeningList.length} rekening aktif
+              </p>
+            </div>
+          </div>
+        )}
+
+        <div className="bg-white/70 rounded-lg border-2 border-dashed border-blue-200 p-4 flex flex-wrap gap-3 items-end">
+          <div className="flex flex-col">
             <div className="space-y-2">
-              <Label className="text-sm font-semibold text-slate-600">Cari</Label>
+              <Label className="text-sm font-semibold text-gray-700 mb-1">Cari</Label>
               <div className="relative">
                 <Input
                   id="search-rekening"
@@ -352,12 +392,14 @@ export default function Rekening() {
                     setPage(1);
                   }}
                   placeholder="Bank / No rekening / Nama rekening / Perusahaan"
-                  className="h-12 rounded-md border-slate-200 bg-white pl-12 text-[15px] shadow-none"
+                  className="w-80 border-2 border-gray-200"
                 />
               </div>
             </div>
+          </div>
+          <div className="flex flex-col">
             <div className="space-y-2">
-              <Label className="text-sm font-semibold text-slate-600">Filter Bank</Label>
+              <Label className="text-sm font-semibold text-gray-700 mb-1">Filter Bank</Label>
               <AppSelect
                 value={filterBank}
                 onValueChange={(value) => {
@@ -370,8 +412,10 @@ export default function Rekening() {
                 ]}
               />
             </div>
+          </div>
+          <div className="flex flex-col">
             <div className="space-y-2">
-              <Label className="text-sm font-semibold text-slate-600">Per Halaman</Label>
+              <Label className="text-sm font-semibold text-gray-700 mb-1">Per Halaman</Label>
               <AppSelect
                 value={String(pageSize)}
                 onValueChange={(value) => {
@@ -388,21 +432,24 @@ export default function Rekening() {
           </div>
         </div>
 
-        <div className="mt-8 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_12px_32px_rgba(15,23,42,0.05)]">
+        <div className="bg-white/50 rounded-lg overflow-hidden border-2 border-dashed border-blue-200">
           <Table className="table-fixed w-full">
             <TableHeader>
-              <TableRow className="bg-slate-50 border-b border-slate-200">
-                <TableHead className="w-40 px-6 py-4 font-semibold text-slate-900">Kode Bank</TableHead>
-                <TableHead className="w-56 px-6 py-4 font-semibold text-slate-900">No Rekening</TableHead>
-                <TableHead className="w-56 px-6 py-4 font-semibold text-slate-900">Nama Rekening</TableHead>
-                <TableHead className="w-52 px-6 py-4 font-semibold text-slate-900">Perusahaan</TableHead>
-                <TableHead className="w-40 px-6 py-4 text-right font-semibold text-slate-900">Aksi</TableHead>
+              <TableRow className="bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-50 hover:to-indigo-50 border-b border-blue-200/50">
+                <TableHead className="w-40 px-6 py-4 font-semibold text-gray-900">Kode Bank</TableHead>
+                <TableHead className="w-56 px-6 py-4 font-semibold text-gray-900">No Rekening</TableHead>
+                <TableHead className="w-56 px-6 py-4 font-semibold text-gray-900">Nama Rekening</TableHead>
+                <TableHead className="w-52 px-6 py-4 font-semibold text-gray-900">Perusahaan</TableHead>
+                {canViewSaldo && (
+                  <TableHead className="w-44 px-6 py-4 text-right font-semibold text-gray-900">Saldo</TableHead>
+                )}
+                <TableHead className="w-40 px-6 py-4 text-right font-semibold text-gray-900">Aksi</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center py-12">
+                  <TableCell colSpan={canViewSaldo ? 6 : 5} className="text-center py-12">
                     <div className="flex flex-col items-center space-y-3">
                       <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
                       <p className="text-gray-600 font-medium">Memuat data rekening...</p>
@@ -411,7 +458,7 @@ export default function Rekening() {
                 </TableRow>
               ) : filteredRekeningList.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center py-12">
+                  <TableCell colSpan={canViewSaldo ? 6 : 5} className="text-center py-12">
                     <div className="flex flex-col items-center space-y-3">
                       <div className="w-12 h-12 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-full flex items-center justify-center">
                         <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -435,6 +482,11 @@ export default function Rekening() {
                         {getRekeningPerusahaanLabel(r)}
                       </span>
                     </TableCell>
+                    {canViewSaldo && (
+                      <TableCell className="w-44 px-6 py-4 text-right font-mono text-gray-900">
+                        Rp {formatCurrency(Number(r.saldo || 0))}
+                      </TableCell>
+                    )}
                     <TableCell className="w-40 px-6 py-4 text-right">
                       <div className="flex justify-end gap-2">
                         <Button

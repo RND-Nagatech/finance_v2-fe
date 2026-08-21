@@ -112,6 +112,21 @@ interface ImportProgressState {
   message: string;
 }
 
+type SplitDanaRow = {
+  id: string;
+  perusahaan_id: string;
+  rekening_id: string;
+  keluar_kategori_id: string;
+  keluar_subkategori_id: string;
+  keluar_akun_id: string;
+  masuk_kategori_id: string;
+  masuk_subkategori_id: string;
+  masuk_akun_id: string;
+  nominal: number;
+  nominalDisplay: string;
+  keterangan: string;
+};
+
 const initialImportProgress: ImportProgressState = {
   phase: 'idle',
   total: null,
@@ -853,6 +868,8 @@ export default function Transaksi() {
   });
   const [createAttachments, setCreateAttachments] = useState<File[]>([]);
   const [creatingWithAttachments, setCreatingWithAttachments] = useState(false);
+  const [splitDanaEnabled, setSplitDanaEnabled] = useState(false);
+  const [splitDanaRows, setSplitDanaRows] = useState<SplitDanaRow[]>([]);
 
   // Fiscal month validation hooks (must be after formData, editModalOpen, editData)
   const [fiscalMonthInvalid, setFiscalMonthInvalid] = useState(false);
@@ -932,6 +949,22 @@ export default function Transaksi() {
     formData.rekening_id && formData.rekening_id !== 'none'
       ? filteredAddRekeningList.find((r) => r._id === formData.rekening_id) || rekeningList.find((r) => r._id === formData.rekening_id)
       : null;
+  const getRekeningListForPerusahaan = (perusahaanId: string) => {
+    const perusahaan = perusahaanList.find((p) => p._id === perusahaanId);
+    if (!perusahaanId) return [];
+    return rekeningList.filter((r: any) => {
+      const rekeningPerusahaanIds = getReferenceIds(r.perusahaan_ids);
+      if (rekeningPerusahaanIds.length > 0) return rekeningPerusahaanIds.includes(String(perusahaanId));
+      const rekeningPerusahaanId = getReferenceId(r.perusahaan_id);
+      if (rekeningPerusahaanId) return rekeningPerusahaanId === String(perusahaanId);
+      return (
+        (perusahaan?.kode_perusahaan && r.kode_perusahaan === perusahaan.kode_perusahaan) ||
+        (perusahaan?.nama_perusahaan && r.nama_perusahaan === perusahaan.nama_perusahaan)
+      );
+    });
+  };
+  const totalSplitDana = splitDanaRows.reduce((sum, row) => sum + Number(row.nominal || 0), 0);
+  const sisaSplitDana = Number(formData.nilai || 0) - totalSplitDana;
 
   // Persist selected bulan per fiscal year in localStorage so refresh keeps selection
   const selectedMonthKey = `transaksi_selected_bulan_${fiscalYear}`;
@@ -1459,26 +1492,83 @@ export default function Transaksi() {
   });
 
   const updateRekeningCacheAfterPendingCreate = (rekening: any, payload: any) => {
+    const splitRowsPayload = Array.isArray(payload?.split_dana) ? payload.split_dana : [];
     if (!rekening || payload?.transaction_mode === 'FINANCE_ONLY') return;
 
     const nilai = Number(payload?.nilai || 0);
     if (!Number.isFinite(nilai) || nilai === 0) return;
 
     const delta = payload?.kategori === 'PENDAPATAN' ? nilai : -nilai;
+    const sourceBaseDelta = splitRowsPayload.length > 0 ? nilai : delta;
+    const splitOutDelta = splitRowsPayload.reduce((sum: number, split: any) => {
+      const nominal = Number(split?.nominal || 0);
+      return sum - nominal;
+    }, 0);
     queryClient.setQueryData(['rekening-all'], (oldData: any) => {
       if (!Array.isArray(oldData)) return oldData;
       return oldData.map((item: any) => {
-        const isSameRekening =
+        const isSourceRekening =
           (rekening._id && item._id === rekening._id) ||
           (item.kode_bank === rekening.kode_bank && item.no_rekening === rekening.no_rekening);
+        const splitInDelta = splitRowsPayload.reduce((sum: number, split: any) => {
+          const isTarget = item.kode_bank === split.kode_bank && item.no_rekening === split.no_rekening;
+          const nominal = Number(split.nominal || 0);
+          return sum + (isTarget ? nominal : 0);
+        }, 0);
 
-        if (!isSameRekening) return item;
+        const holdDelta = (isSourceRekening ? sourceBaseDelta + splitOutDelta : 0) + splitInDelta;
+
+        if (holdDelta === 0) return item;
         return {
           ...item,
-          saldo_on_hold: Number(item.saldo_on_hold || 0) + delta,
+          saldo_on_hold: Number(item.saldo_on_hold || 0) + holdDelta,
         };
       });
     });
+  };
+
+  const addSplitDanaRow = () => {
+    const defaultKeluarKategori = categories.find((cat) => String(cat.kategori || '').toUpperCase() === 'BIAYA');
+    const defaultKeluarSubKategori = defaultKeluarKategori
+      ? subCategories.find((sub) =>
+        String(sub.kategori || '').toUpperCase() === 'BIAYA' &&
+        String(sub.sub_kategori || '').toUpperCase() === 'LAIN LAIN'
+      )
+      : null;
+    const defaultKeluarAkun = defaultKeluarKategori && defaultKeluarSubKategori
+      ? accounts.find((acc) =>
+        String(acc.kategori || '').toUpperCase() === 'BIAYA' &&
+        String(acc.sub_kategori || '').toUpperCase() === 'LAIN LAIN' &&
+        String(acc.akun || '').toUpperCase() === 'LAIN LAIN'
+      )
+      : null;
+
+    setSplitDanaEnabled(true);
+    setSplitDanaRows((prev) => [
+      ...prev,
+      {
+        id: `${Date.now()}-${prev.length}`,
+        perusahaan_id: '',
+        rekening_id: '',
+        keluar_kategori_id: defaultKeluarKategori?._id || '',
+        keluar_subkategori_id: defaultKeluarSubKategori?._id || '',
+        keluar_akun_id: defaultKeluarAkun?._id || '',
+        masuk_kategori_id: '',
+        masuk_subkategori_id: '',
+        masuk_akun_id: '',
+        nominal: 0,
+        nominalDisplay: '',
+        keterangan: '',
+      },
+    ]);
+  };
+
+  const updateSplitDanaRow = (id: string, patch: Partial<SplitDanaRow>) => {
+    setSplitDanaRows((prev) => prev.map((row) => (row.id === id ? { ...row, ...patch } : row)));
+  };
+
+  const removeSplitDanaRow = (id: string) => {
+    setSplitDanaRows((prev) => prev.filter((row) => row.id !== id));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -1498,6 +1588,37 @@ export default function Transaksi() {
     if (!formData.kategori_id || !formData.subkategori_id || !formData.akun_id || !formData.bulan_fiskal || nilaiInvalid || !formData.tanggal) {
       toast.error('Pastikan semua field wajib sudah diisi!');
       return;
+    }
+    const activeSplitRows = splitDanaEnabled
+      ? splitDanaRows.filter((row) =>
+        row.rekening_id &&
+        Number(row.nominal || 0) > 0 &&
+        row.keluar_kategori_id &&
+        row.keluar_subkategori_id &&
+        row.keluar_akun_id &&
+        row.masuk_kategori_id &&
+        row.masuk_subkategori_id &&
+        row.masuk_akun_id
+      )
+      : [];
+    if (splitDanaEnabled) {
+      if (!formData.rekening_id || formData.rekening_id === 'none') {
+        toast.error('Rekening sumber wajib dipilih untuk split dana.');
+        return;
+      }
+      if (activeSplitRows.length !== splitDanaRows.length || activeSplitRows.length === 0) {
+        toast.error('Lengkapi rekening tujuan, nominal, serta kategori/sub kategori/akun keluar dan masuk split dana.');
+        return;
+      }
+      if (totalSplitDana > nilaiNum) {
+        toast.error('Total split dana tidak boleh melebihi nilai transaksi sumber.');
+        return;
+      }
+      const hasSameSourceTarget = activeSplitRows.some((row) => row.rekening_id === formData.rekening_id);
+      if (hasSameSourceTarget) {
+        toast.error('Rekening tujuan split tidak boleh sama dengan rekening sumber.');
+        return;
+      }
     }
     const akunObj = accounts.find((a) => a._id === formData.akun_id);
     const subKategoriObj = subCategories.find((sk) => sk._id === formData.subkategori_id);
@@ -1526,6 +1647,33 @@ export default function Transaksi() {
       kode_bank: rekeningObj?.kode_bank || '',
       no_rekening: rekeningObj?.no_rekening || '',
     };
+    if (activeSplitRows.length > 0) {
+      payload.split_dana = activeSplitRows.map((row) => {
+        const rekeningSplit = rekeningList.find((r) => r._id === row.rekening_id);
+        const perusahaanSplit = perusahaanList.find((p) => p._id === row.perusahaan_id);
+        const keluarKategori = categories.find((k) => k._id === row.keluar_kategori_id);
+        const keluarSubKategori = subCategories.find((sk) => sk._id === row.keluar_subkategori_id);
+        const keluarAkun = accounts.find((a) => a._id === row.keluar_akun_id);
+        const masukKategori = categories.find((k) => k._id === row.masuk_kategori_id);
+        const masukSubKategori = subCategories.find((sk) => sk._id === row.masuk_subkategori_id);
+        const masukAkun = accounts.find((a) => a._id === row.masuk_akun_id);
+        return {
+          nominal: Number(row.nominal || 0),
+          keterangan: row.keterangan || '',
+          keluar_kategori: keluarKategori?.kategori || '',
+          keluar_sub_kategori: keluarSubKategori?.sub_kategori || '',
+          keluar_akun: keluarAkun?.akun || '',
+          masuk_kategori: masukKategori?.kategori || '',
+          masuk_sub_kategori: masukSubKategori?.sub_kategori || '',
+          masuk_akun: masukAkun?.akun || '',
+          kode_perusahaan: perusahaanSplit?.kode_perusahaan || rekeningSplit?.kode_perusahaan || '',
+          nama_perusahaan: perusahaanSplit?.nama_perusahaan || rekeningSplit?.nama_perusahaan || '',
+          kode_bank: rekeningSplit?.kode_bank || '',
+          no_rekening: rekeningSplit?.no_rekening || '',
+          nama_rekening: rekeningSplit?.nama_rekening || '',
+        };
+      });
+    }
     setCreatingWithAttachments(true);
     try {
       const created = await createMutation.mutateAsync(payload);
@@ -1572,6 +1720,8 @@ export default function Transaksi() {
       });
       setFormattedNilai('');
       setCreateAttachments([]);
+      setSplitDanaEnabled(false);
+      setSplitDanaRows([]);
     } finally {
       setCreatingWithAttachments(false);
     }
@@ -1608,6 +1758,8 @@ export default function Transaksi() {
       transaction_mode: 'NORMAL',
     });
     setFormattedNilai('');
+    setSplitDanaEnabled(false);
+    setSplitDanaRows([]);
   };
 
   const formatCurrency = (value: number) => {
@@ -1734,16 +1886,27 @@ export default function Transaksi() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="mx-auto max-w-7xl px-5 pb-8 pt-0 sm:px-6 lg:px-8 space-y-8">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-100 relative overflow-hidden">
+      <div className="absolute inset-0 bg-grid-slate-100 [mask-image:linear-gradient(0deg,white,rgba(255,255,255,0.6))] -z-10" />
+      <div className="absolute top-0 right-0 -z-10">
+        <div className="w-72 h-72 bg-gradient-to-bl from-blue-400/20 to-indigo-600/20 rounded-full blur-3xl" />
+      </div>
+      <div className="absolute bottom-0 left-0 -z-10">
+        <div className="w-96 h-96 bg-gradient-to-tr from-indigo-400/20 to-purple-600/20 rounded-full blur-3xl" />
+      </div>
+
+      <div className="container mx-auto px-6 py-8 space-y-8">
+        <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-[28px] font-extrabold leading-tight text-slate-900">Transaksi</h1>
-            <p className="mt-2 text-sm font-medium text-slate-500">Kelola transaksi dengan mudah dan efisien.</p>
+            <h1 className="text-4xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
+              Transaksi
+            </h1>
+            <p className="text-gray-600 mt-2">Kelola transaksi dengan mudah dan efisien.</p>
           </div>
           <div className="flex gap-2">
             <Button
-              className="h-11 rounded-md border border-orange-500 bg-orange-500 px-6 text-sm font-bold text-white hover:bg-orange-600 hover:border-orange-600"
+              variant="outline"
+              className="border-amber-300 text-amber-700 hover:bg-amber-50"
               onClick={() => {
                 setImportModalOpen(true);
                 setImportReport(null);
@@ -1753,13 +1916,14 @@ export default function Transaksi() {
               Import Data
             </Button>
             <Button
-              className="h-11 rounded-md bg-green-600 px-6 text-sm font-bold text-white hover:bg-green-700"
+              variant="outline"
+              className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"
               onClick={handleExportExcel}
             >
               Export Excel
             </Button>
             <Button
-              className="h-11 rounded-md bg-blue-600 px-6 text-sm font-bold text-white shadow-[0_10px_22px_rgba(37,99,235,0.18)] hover:bg-blue-700"
+              className="bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white font-semibold px-6 py-3 rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-[1.02]"
               onClick={() => setAddModalOpen(true)}
             >
               <Plus className="mr-2 h-4 w-4" />
@@ -1768,7 +1932,7 @@ export default function Transaksi() {
           </div>
         </div>
         {/* FILTER BAR - moved below title, above table */}
-        <div className="mt-8 rounded-lg border border-slate-200 bg-white p-5 shadow-[0_12px_32px_rgba(15,23,42,0.05)]">
+        <div className="bg-white/70 rounded-lg border-2 border-dashed border-blue-200 p-4">
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-12">
             {/* Type Data */}
             <div className="space-y-2 xl:col-span-2">
@@ -2392,6 +2556,273 @@ export default function Transaksi() {
                     Normal: memengaruhi dashboard dan rekening. Rekening Only: hanya rekening. Dashboard Only: hanya dashboard/agregasi.
                   </p>
                 </div>
+                <div className="rounded-lg border border-slate-200 bg-white p-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <Label htmlFor="split_dana" className="text-sm font-semibold text-slate-700">Split Dana</Label>
+                      <p className="mt-1 text-xs text-slate-500">Gunakan rekening di input utama sebagai sumber dana.</p>
+                    </div>
+                    <Switch
+                      id="split_dana"
+                      checked={splitDanaEnabled}
+                      onCheckedChange={(checked) => {
+                        setSplitDanaEnabled(checked);
+                        if (checked && splitDanaRows.length === 0) addSplitDanaRow();
+                        if (!checked) setSplitDanaRows([]);
+                      }}
+                    />
+                  </div>
+
+                  {splitDanaEnabled && (
+                    <div className="mt-4 space-y-4">
+                      <div className="rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-xs font-medium text-blue-800">
+                        Sumber: {selectedAddRekening ? `${selectedAddRekening.kode_bank} - ${selectedAddRekening.no_rekening} - ${selectedAddRekening.nama_rekening}` : 'Pilih rekening sumber dulu'}
+                      </div>
+
+                      {splitDanaRows.map((row, index) => {
+                        const rekeningOptions = getRekeningListForPerusahaan(row.perusahaan_id);
+                        const keluarKategori = categories.find((cat) => cat._id === row.keluar_kategori_id)?.kategori;
+                        const keluarSubCategories = row.keluar_kategori_id
+                          ? subCategories.filter((sub) => sub.kategori === keluarKategori)
+                          : [];
+                        const keluarSubKategori = subCategories.find((sub) => sub._id === row.keluar_subkategori_id);
+                        const keluarAccounts = row.keluar_subkategori_id && keluarKategori
+                          ? accounts.filter((acc) => acc.sub_kategori === keluarSubKategori?.sub_kategori && acc.kategori === keluarKategori)
+                          : [];
+                        const masukKategori = categories.find((cat) => cat._id === row.masuk_kategori_id)?.kategori;
+                        const masukSubCategories = row.masuk_kategori_id
+                          ? subCategories.filter((sub) => sub.kategori === masukKategori)
+                          : [];
+                        const masukSubKategori = subCategories.find((sub) => sub._id === row.masuk_subkategori_id);
+                        const masukAccounts = row.masuk_subkategori_id && masukKategori
+                          ? accounts.filter((acc) => acc.sub_kategori === masukSubKategori?.sub_kategori && acc.kategori === masukKategori)
+                          : [];
+                        return (
+                          <div key={row.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                            <div className="mb-3 flex items-center justify-between">
+                              <p className="text-sm font-bold text-slate-700">Split #{index + 1}</p>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => removeSplitDanaRow(row.id)}
+                                className="h-8 border-red-200 px-3 text-red-600 hover:bg-red-50 hover:text-red-700"
+                              >
+                                Hapus
+                              </Button>
+                            </div>
+                            <div className="grid gap-3 md:grid-cols-2">
+                              <div className="grid gap-2">
+                                <Label className="text-xs font-semibold text-slate-600">Perusahaan Tujuan</Label>
+                                <Select
+                                  value={row.perusahaan_id}
+                                  onValueChange={(value) => updateSplitDanaRow(row.id, { perusahaan_id: value, rekening_id: '' })}
+                                >
+                                  <SelectTrigger className="h-11 rounded-md border border-slate-200 bg-white">
+                                    <SelectValue placeholder="Pilih perusahaan" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {perusahaanList.map((p) => (
+                                      <SelectItem key={p._id} value={p._id}>
+                                        {p.nama_perusahaan}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div className="grid gap-2">
+                                <Label className="text-xs font-semibold text-slate-600">Rekening Tujuan</Label>
+                                <Select
+                                  value={row.rekening_id}
+                                  onValueChange={(value) => updateSplitDanaRow(row.id, { rekening_id: value })}
+                                  disabled={!row.perusahaan_id}
+                                >
+                                  <SelectTrigger className="h-11 rounded-md border border-slate-200 bg-white disabled:opacity-100">
+                                    <SelectValue placeholder={row.perusahaan_id ? 'Pilih rekening' : 'Pilih perusahaan dulu'} />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {rekeningOptions.map((r: any) => (
+                                      <SelectItem key={r._id} value={r._id}>
+                                        {r.kode_bank} - {r.no_rekening}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-3 md:col-span-2">
+                                <p className="mb-3 text-xs font-bold uppercase tracking-wide text-amber-800">Keluar dari Sumber</p>
+                                <div className="grid gap-3 md:grid-cols-3">
+                                  <div className="grid gap-2">
+                                    <Label className="text-xs font-semibold text-slate-600">Kategori Keluar</Label>
+                                    <Select
+                                      value={row.keluar_kategori_id}
+                                      onValueChange={(value) => updateSplitDanaRow(row.id, {
+                                        keluar_kategori_id: value,
+                                        keluar_subkategori_id: '',
+                                        keluar_akun_id: '',
+                                      })}
+                                    >
+                                      <SelectTrigger className="h-11 rounded-md border border-slate-200 bg-white">
+                                        <SelectValue placeholder="Kategori" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {categories.map((cat) => (
+                                          <SelectItem key={cat._id} value={cat._id}>{cat.kategori}</SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  <div className="grid gap-2">
+                                    <Label className="text-xs font-semibold text-slate-600">Sub Kategori Keluar</Label>
+                                    <Select
+                                      value={row.keluar_subkategori_id}
+                                      onValueChange={(value) => updateSplitDanaRow(row.id, {
+                                        keluar_subkategori_id: value,
+                                        keluar_akun_id: '',
+                                      })}
+                                      disabled={!row.keluar_kategori_id}
+                                    >
+                                      <SelectTrigger className="h-11 rounded-md border border-slate-200 bg-white disabled:opacity-100">
+                                        <SelectValue placeholder="Sub kategori" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {keluarSubCategories.map((sub) => (
+                                          <SelectItem key={sub._id} value={sub._id}>{sub.sub_kategori}</SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  <div className="grid gap-2">
+                                    <Label className="text-xs font-semibold text-slate-600">Akun Keluar</Label>
+                                    <Select
+                                      value={row.keluar_akun_id}
+                                      onValueChange={(value) => updateSplitDanaRow(row.id, { keluar_akun_id: value })}
+                                      disabled={!row.keluar_subkategori_id}
+                                    >
+                                      <SelectTrigger className="h-11 rounded-md border border-slate-200 bg-white disabled:opacity-100">
+                                        <SelectValue placeholder="Akun" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {keluarAccounts.map((acc) => (
+                                          <SelectItem key={acc._id} value={acc._id}>{acc.akun}</SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 p-3 md:col-span-2">
+                                <p className="mb-3 text-xs font-bold uppercase tracking-wide text-emerald-800">Masuk ke Tujuan</p>
+                                <div className="grid gap-3 md:grid-cols-3">
+                                  <div className="grid gap-2">
+                                    <Label className="text-xs font-semibold text-slate-600">Kategori Masuk</Label>
+                                    <Select
+                                      value={row.masuk_kategori_id}
+                                      onValueChange={(value) => updateSplitDanaRow(row.id, {
+                                        masuk_kategori_id: value,
+                                        masuk_subkategori_id: '',
+                                        masuk_akun_id: '',
+                                      })}
+                                    >
+                                      <SelectTrigger className="h-11 rounded-md border border-slate-200 bg-white">
+                                        <SelectValue placeholder="Kategori" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {categories.map((cat) => (
+                                          <SelectItem key={cat._id} value={cat._id}>{cat.kategori}</SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  <div className="grid gap-2">
+                                    <Label className="text-xs font-semibold text-slate-600">Sub Kategori Masuk</Label>
+                                    <Select
+                                      value={row.masuk_subkategori_id}
+                                      onValueChange={(value) => updateSplitDanaRow(row.id, {
+                                        masuk_subkategori_id: value,
+                                        masuk_akun_id: '',
+                                      })}
+                                      disabled={!row.masuk_kategori_id}
+                                    >
+                                      <SelectTrigger className="h-11 rounded-md border border-slate-200 bg-white disabled:opacity-100">
+                                        <SelectValue placeholder="Sub kategori" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {masukSubCategories.map((sub) => (
+                                          <SelectItem key={sub._id} value={sub._id}>{sub.sub_kategori}</SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  <div className="grid gap-2">
+                                    <Label className="text-xs font-semibold text-slate-600">Akun Masuk</Label>
+                                    <Select
+                                      value={row.masuk_akun_id}
+                                      onValueChange={(value) => updateSplitDanaRow(row.id, { masuk_akun_id: value })}
+                                      disabled={!row.masuk_subkategori_id}
+                                    >
+                                      <SelectTrigger className="h-11 rounded-md border border-slate-200 bg-white disabled:opacity-100">
+                                        <SelectValue placeholder="Akun" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {masukAccounts.map((acc) => (
+                                          <SelectItem key={acc._id} value={acc._id}>{acc.akun}</SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="grid gap-2">
+                                <Label className="text-xs font-semibold text-slate-600">Nominal</Label>
+                                <Input
+                                  type="text"
+                                  value={row.nominalDisplay}
+                                  onChange={(e) => {
+                                    const formatted = formatNumberInput(e.target.value);
+                                    updateSplitDanaRow(row.id, {
+                                      nominalDisplay: formatted,
+                                      nominal: parseFormattedInput(formatted),
+                                    });
+                                  }}
+                                  placeholder="0"
+                                  className="h-11 rounded-md border border-slate-200 bg-white"
+                                />
+                              </div>
+                              <div className="grid gap-2">
+                                <Label className="text-xs font-semibold text-slate-600">Keterangan</Label>
+                                <Input
+                                  value={row.keterangan}
+                                  onChange={(e) => updateSplitDanaRow(row.id, { keterangan: e.target.value.toUpperCase() })}
+                                  placeholder="(Opsional)"
+                                  className="h-11 rounded-md border border-slate-200 bg-white"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      <div className="flex flex-col gap-3 border-t border-slate-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="grid gap-1 text-sm font-medium text-slate-600">
+                          <span>Total split: <strong className="text-slate-900">{formatCurrency(totalSplitDana)}</strong></span>
+                          <span className={sisaSplitDana < 0 ? 'text-red-600' : 'text-slate-600'}>
+                            Sisa sumber: <strong>{formatCurrency(sisaSplitDana)}</strong>
+                          </span>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={addSplitDanaRow}
+                          className="h-10 border-blue-500 px-4 text-sm font-bold text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+                        >
+                          <Plus className="mr-2 h-4 w-4" />
+                          Tambah Split
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <div className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
                   <div>
                     <Label htmlFor="status_final" className="text-sm font-semibold text-slate-700">Status Final</Label>
@@ -2464,7 +2895,7 @@ export default function Transaksi() {
         </Dialog>
 
         {/* Daftar Transaksi */}
-        <div className="mt-8 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_12px_32px_rgba(15,23,42,0.05)]">
+        <div className="bg-white/50 rounded-lg overflow-hidden border-2 border-dashed border-blue-200">
           {typeData === 'Detail' && (
             <div className="flex items-center justify-end gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2">
               <Button
@@ -2487,7 +2918,7 @@ export default function Transaksi() {
           )}
           <Table className="table-fixed w-full">
             <TableHeader>
-              <TableRow className="border-b border-slate-200 bg-slate-50 hover:bg-slate-50">
+              <TableRow className="bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-50 hover:to-indigo-50 border-b border-blue-200/50">
                 {typeData === 'Detail' && (
                   <TableHead className="w-10 px-2 py-4"></TableHead>
                 )}
@@ -2801,7 +3232,7 @@ export default function Transaksi() {
             </TableBody>
           </Table>
 
-          <div className="grid gap-4 border-t border-slate-200 px-6 py-5 text-sm font-medium text-slate-600 md:grid-cols-3 md:items-center">
+          <div className="grid gap-4 border-t border-gray-100/50 px-6 py-5 text-sm font-medium text-gray-600 md:grid-cols-3 md:items-center">
             <div>Total Data: {totalDataAllPages}</div>
             <div className="text-center">Halaman {page} dari {totalPages}</div>
             <div className="flex justify-end gap-3">
