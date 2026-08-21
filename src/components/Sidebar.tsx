@@ -15,7 +15,6 @@ import {
   Scale,
   ShieldCheck,
   Wrench,
-  Users,
   Wallet,
   WalletCards,
 } from 'lucide-react';
@@ -301,15 +300,6 @@ export default function AppSidebar() {
                 <SectionLabel>System</SectionLabel>
                 {user?.role === 'superuser' && (
                   <>
-                    <SidebarMenuItem>
-                      <NavLink to="/users">
-                        <SidebarMenuButton isActive={location.pathname === '/users'} className={mainButtonClass}>
-                          <Users className="h-5 w-5" />
-                          <span className="font-semibold">Users</span>
-                          <ActiveBar active={location.pathname === '/users'} />
-                        </SidebarMenuButton>
-                      </NavLink>
-                    </SidebarMenuItem>
                     <SidebarMenuItem>
                       <SidebarMenuButton
                         onClick={() => setIsToolsOpen((v) => !v)}
