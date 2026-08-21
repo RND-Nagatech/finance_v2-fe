@@ -1821,6 +1821,8 @@ export default function Transaksi() {
       perusahaan_id: '',
       rekening_id: '',
       source_type: 'REKENING',
+      asset_id: '',
+      asset_qty: '',
       status_final: true,
       is_special_transaction: false,
       transaction_mode: 'NORMAL',
