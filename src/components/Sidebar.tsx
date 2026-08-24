@@ -4,6 +4,7 @@ import { useAppStore } from '@/store/useAppStore';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   BookOpenCheck,
+  BriefcaseBusiness,
   ChevronDown,
   Coins,
   Database,
@@ -14,6 +15,7 @@ import {
   Receipt,
   Scale,
   ShieldCheck,
+  Users,
   Wrench,
   Wallet,
   WalletCards,
@@ -93,6 +95,7 @@ export default function AppSidebar() {
   const { user, logout } = useAppStore();
   const [isMasterOpen, setIsMasterOpen] = useState(location.pathname.startsWith('/master'));
   const [isAssetOpen, setIsAssetOpen] = useState(location.pathname.startsWith('/assets'));
+  const [isPerjalananOpen, setIsPerjalananOpen] = useState(location.pathname.startsWith('/perjalanan-dinas'));
   const [isToolsOpen, setIsToolsOpen] = useState(
     location.pathname === '/summary-tools' || location.pathname === '/reconciliation-tool' || location.pathname === '/saldo-on-hold-tools'
   );
@@ -152,9 +155,15 @@ export default function AppSidebar() {
     { to: '/assets/types', label: 'Jenis Asset' },
     { to: '/assets', label: 'Asset' },
   ];
+  const perjalananItems = [
+    { to: '/perjalanan-dinas', label: 'Perjalanan Dinas' },
+    { to: '/perjalanan-dinas/dana', label: 'Dana Perjalanan' },
+    { to: '/perjalanan-dinas/audit', label: 'Audit Perjalanan' },
+  ];
   const roleLabel = userRole === 'superuser' ? 'Administrator' : userRole ? userRole.charAt(0).toUpperCase() + userRole.slice(1) : 'Account User';
   const isToolsActive = toolItems.some((item) => location.pathname === item.to);
   const isAssetActive = assetItems.some((item) => location.pathname === item.to);
+  const isPerjalananActive = location.pathname.startsWith('/perjalanan-dinas');
 
   return (
     <SidebarProvider>
@@ -265,6 +274,39 @@ export default function AppSidebar() {
                 </SidebarMenuItem>
                 <SidebarMenuItem>
                   <SidebarMenuButton
+                    onClick={() => setIsPerjalananOpen((v) => !v)}
+                    isActive={isPerjalananActive}
+                    className={mainButtonClass}
+                    aria-expanded={isPerjalananOpen}
+                    aria-controls="perjalanan-dinas-submenu"
+                  >
+                    <BriefcaseBusiness className="h-5 w-5" />
+                    <span className="font-semibold">Perjalanan Dinas</span>
+                    <ChevronDown className={cn('ml-auto h-4 w-4 transition-transform duration-200', isPerjalananOpen && 'rotate-180')} />
+                    <ActiveBar active={isPerjalananActive} />
+                  </SidebarMenuButton>
+                  {isPerjalananOpen && (
+                    <SidebarMenuSub id="perjalanan-dinas-submenu" className="ml-6 mt-1.5 space-y-0.5 border-l border-slate-600/35 pl-2.5">
+                      {perjalananItems.map((item) => {
+                        const isActive = location.pathname === item.to;
+                        return (
+                          <SidebarMenuSubItem key={item.to}>
+                            <NavLink to={item.to}>
+                              <SidebarMenuSubButton asChild isActive={isActive} className={subButtonClass}>
+                                <div className="flex items-center gap-2">
+                                  <span className={cn(subDotClass, isActive && 'bg-blue-300 shadow-[0_0_0_3px_rgba(96,165,250,0.14)]')} />
+                                  <span className="font-medium">{item.label}</span>
+                                </div>
+                              </SidebarMenuSubButton>
+                            </NavLink>
+                          </SidebarMenuSubItem>
+                        );
+                      })}
+                    </SidebarMenuSub>
+                  )}
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
                     onClick={() => setIsAssetOpen((v) => !v)}
                     isActive={isAssetActive}
                     className={mainButtonClass}
@@ -300,6 +342,15 @@ export default function AppSidebar() {
                 <SectionLabel>System</SectionLabel>
                 {user?.role === 'superuser' && (
                   <>
+                    <SidebarMenuItem>
+                      <NavLink to="/users">
+                        <SidebarMenuButton isActive={location.pathname === '/users'} className={mainButtonClass}>
+                          <Users className="h-5 w-5" />
+                          <span className="font-semibold">Users</span>
+                          <ActiveBar active={location.pathname === '/users'} />
+                        </SidebarMenuButton>
+                      </NavLink>
+                    </SidebarMenuItem>
                     <SidebarMenuItem>
                       <SidebarMenuButton
                         onClick={() => setIsToolsOpen((v) => !v)}

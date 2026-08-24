@@ -26,6 +26,10 @@ import Akun from "./pages/MasterData/Akun";
 import Transaksi from "./pages/Transaksi";
 import Assets from "./pages/Assets";
 import AssetTypes from "./pages/AssetTypes";
+import PerjalananDinas from "./pages/PerjalananDinas";
+import PerjalananDinasDana from "./pages/PerjalananDinasDana";
+import PerjalananDinasAudit from "./pages/PerjalananDinasAudit";
+import PerjalananDinasTransaksi from "./pages/PerjalananDinasTransaksi";
 import TutupBuku from "./pages/TutupBuku";
 import NotFound from "./pages/NotFound";
 import PublicDashboard from "./pages/public-dashboard";
@@ -165,6 +169,46 @@ const App = () => (
               <ProtectedRoute>
                 <MainLayout>
                   <AssetTypes />
+                </MainLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/perjalanan-dinas"
+            element={
+              <ProtectedRoute>
+                <MainLayout>
+                  <PerjalananDinas />
+                </MainLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/perjalanan-dinas/transaksi"
+            element={
+              <ProtectedRoute>
+                <MainLayout>
+                  <PerjalananDinasTransaksi />
+                </MainLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/perjalanan-dinas/dana"
+            element={
+              <ProtectedRoute>
+                <MainLayout>
+                  <PerjalananDinasDana />
+                </MainLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/perjalanan-dinas/audit"
+            element={
+              <ProtectedRoute>
+                <MainLayout>
+                  <PerjalananDinasAudit />
                 </MainLayout>
               </ProtectedRoute>
             }
