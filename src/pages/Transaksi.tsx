@@ -3249,7 +3249,7 @@ export default function Transaksi() {
                                   )}
                                 </>
                               ) : null}
-                              {(user?.role === 'superuser' || user?.role === 'corsec' || user?.role === 'finance') && (
+                              {(!row.is_validated && (user?.role === 'superuser' || user?.role === 'corsec' || user?.role === 'finance')) && (
                                 <DropdownMenuItem
                                   onClick={() => handleToggleStatusFinal(row)}
                                   className="cursor-pointer text-amber-700 focus:text-amber-700"
