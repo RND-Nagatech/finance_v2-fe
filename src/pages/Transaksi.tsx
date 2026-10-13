@@ -1931,17 +1931,10 @@ export default function Transaksi() {
         params.append('flatten', '1');
       }
       if (kategoriSort) params.append('sortKategori', kategoriSort);
-      // Hilangkan trailing slash jika ada di VITE_API_BASE_URL
-      const baseUrl = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || '';
-      const apiUrl = `${baseUrl}/transaksi/export-excel?${params.toString()}`;
-      const response = await fetch(apiUrl, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
+      const response = await axiosInstance.get(`/transaksi/export-excel?${params.toString()}`, {
+        responseType: 'blob',
       });
-      if (!response.ok) throw new Error('Gagal export data');
-      const blob = await response.blob();
+      const blob = response.data;
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
