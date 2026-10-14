@@ -54,13 +54,14 @@ interface UserFormData {
   name: string;
   password: string;
   role: string;
+  portal_email: string;
 }
 
 export default function Users() {
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
-  const [formData, setFormData] = useState<UserFormData>({ username: '', name: '', password: '', role: 'user' });
+  const [formData, setFormData] = useState<UserFormData>({ username: '', name: '', password: '', role: 'user', portal_email: '' });
   const { user } = useAppStore();
 
   // Check if user is superuser
@@ -136,6 +137,7 @@ export default function Users() {
         name: formData.name,
         password: formData.password,
         role: formData.role,
+        portal_email: formData.portal_email,
       });
       return;
     }
@@ -145,19 +147,20 @@ export default function Users() {
     if (formData.name) updateData.name = formData.name;
     if (formData.password) updateData.password = formData.password;
     if (formData.role) updateData.role = formData.role;
+    updateData.portal_email = formData.portal_email;
 
     updateMutation.mutate({ id: editId, data: updateData });
   };
 
   const handleEdit = (user: User) => {
     setEditId(user._id);
-    setFormData({ username: user.username, name: user.name || '', password: '', role: user.role });
+    setFormData({ username: user.username, name: user.name || '', password: '', role: user.role, portal_email: user.portal_email || user.portal_user_id || '' });
     setModalOpen(true);
   };
 
   const handleAdd = () => {
     setEditId(null);
-    setFormData({ username: '', name: '', password: '', role: 'user' });
+    setFormData({ username: '', name: '', password: '', role: 'user', portal_email: '' });
     setModalOpen(true);
   };
 
@@ -168,7 +171,7 @@ export default function Users() {
   const handleCloseModal = () => {
     setModalOpen(false);
     setEditId(null);
-    setFormData({ username: '', name: '', password: '', role: 'user' });
+    setFormData({ username: '', name: '', password: '', role: 'user', portal_email: '' });
   };
 
   if (isLoading) {
@@ -204,6 +207,7 @@ export default function Users() {
                 <TableHead>Username</TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead>Role</TableHead>
+                <TableHead>Email Portal</TableHead>
                 <TableHead>Created At</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -214,6 +218,7 @@ export default function Users() {
                   <TableCell className="font-medium">{user.username}</TableCell>
                   <TableCell>{user.name || '-'}</TableCell>
                   <TableCell>{user.role}</TableCell>
+                  <TableCell className="font-mono text-xs">{user.portal_email || user.portal_user_id || '-'}</TableCell>
                   <TableCell>{new Date(user.createdAt).toLocaleDateString()}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
@@ -305,10 +310,23 @@ export default function Users() {
                     <SelectItem value="superuser">Superuser</SelectItem>
                     <SelectItem value="admin">Admin</SelectItem>
                     <SelectItem value="finance">Finance</SelectItem>
+                    <SelectItem value="finance_input">Finance Input</SelectItem>
                     <SelectItem value="corsec">Corsec</SelectItem>
                     <SelectItem value="user">User</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="portal_email" className="text-right">
+                  Email Portal
+                </Label>
+                <Input
+                  id="portal_email"
+                  value={formData.portal_email}
+                  onChange={(e) => setFormData({ ...formData, portal_email: e.target.value })}
+                  className="col-span-3"
+                  placeholder="Email/username user di program-internal"
+                />
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="password" className="text-right">
